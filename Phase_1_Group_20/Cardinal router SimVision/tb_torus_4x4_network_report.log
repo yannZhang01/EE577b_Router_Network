@@ -1,0 +1,13 @@
+tb_torus_4x4_network report
+==========================
+TEST 1 - reset behavior : PASS (delta pass=1, delta fail=0)
+TEST 2 - single-hop East, non-blocking handshake : PASS (delta pass=2, delta fail=0)
+TEST 3 - single-hop West wrap-around : PASS (delta pass=2, delta fail=0)
+TEST 4 - single-hop North wrap-around : PASS (delta pass=2, delta fail=0)
+TEST 5 - multi-hop X then Y with hop update checks : PASS (delta pass=4, delta fail=0)
+TEST 6 - X dateline crossing followed by X1 to Y0 phase switch : PASS (delta pass=5, delta fail=0)
+TEST 7 - blocking handshake on a router-to-router link : PASS (delta pass=4, delta fail=0)
+TEST 8 - deterministic contention and arbiter priority rotation at router (1,1) N_out : FAIL (delta pass=0, delta fail=2)
+========================================
+TB DONE: pass_count=21 fail_count=2
+========================================

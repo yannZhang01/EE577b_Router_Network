@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module gold_router_tb;
+module tb_gold_router;
 
     localparam PACKET_WIDTH = 64;
 
@@ -99,6 +99,16 @@ module gold_router_tb;
         .pe_do(pe_do)
     );
 
+
+
+    function integer buf_idx;
+        input integer port;
+        input integer vc;
+        begin
+            buf_idx = (port << 1) + vc;
+        end
+    endfunction
+
     function [PACKET_WIDTH-1:0] make_packet;
         input                    vc;
         input                    dirx;
@@ -177,8 +187,8 @@ module gold_router_tb;
         begin
             reset    = 1'b1;
             polarity = 1'b0;
-            clear_inputs();
-            clear_outputs_ready();
+            clear_inputs;
+            clear_outputs_ready;
             local_x  = 4'd0;
             local_y  = 4'd0;
             repeat (4) @(posedge clk);
@@ -403,7 +413,7 @@ module gold_router_tb;
         fail_count = 0;
 
         $dumpfile("gold_router_tb.vcd");
-        $dumpvars(0, gold_router_tb);
+        $dumpvars(0, tb_gold_router);
 
         do_reset();
 
@@ -532,6 +542,85 @@ module gold_router_tb;
             20
         );
         wait_cycles(6);
+
+        // ------------------------------------------------------------
+        // Test 8: Deterministic N_out contention and round-robin
+        //         rotation inside a single router.
+        // ------------------------------------------------------------
+        $display("\n[Test 8] Dedicated contention and arbiter rotation on N_out");
+        do_reset();
+        local_x = 4'd1;
+        local_y = 4'd2;
+
+        // Ensure VC0 is the active internal VC for deterministic checking.
+        if (polarity !== 1'b0)
+            wait (polarity == 1'b0);
+
+        // Round 1: preload E_in.vc0 and W_in.vc0 with two packets that both
+        // request N_out. Reset priority order for N_out VC0 is
+        // N_in -> E_in -> W_in -> PE_in, so E_in must win first.
+        @(negedge clk);
+        dut.in_buf_valid[buf_idx(PORT_E, 1'b0)]  = 1'b1;
+        dut.in_buf_data [buf_idx(PORT_E, 1'b0)]  = make_packet(1'b0, DIRX_E, DIRY_N, 4'd0, 4'd1, 4'd4, 4'd2, 4'd4, 4'd1, 32'h88880001);
+        dut.in_buf_valid[buf_idx(PORT_W, 1'b0)]  = 1'b1;
+        dut.in_buf_data [buf_idx(PORT_W, 1'b0)]  = make_packet(1'b0, DIRX_E, DIRY_N, 4'd0, 4'd1, 4'd5, 4'd2, 4'd5, 4'd1, 32'h88880002);
+        dut.out_buf_valid[buf_idx(PORT_N, 1'b0)] = 1'b0;
+        #1;
+
+        if (!(dut.req_n_from_e && dut.req_n_from_w && dut.n_grant_valid)) begin
+            $display("[FAIL] Round 1 contention was not created on N_out at time %0t", $time);
+            fail_count = fail_count + 1;
+        end else if (dut.n_grant_src !== PORT_E) begin
+            $display("[FAIL] Round 1 wrong winner on N_out. Expected E_in, observed src=%0d", dut.n_grant_src);
+            fail_count = fail_count + 1;
+        end else begin
+            $display("[PASS] Round 1 contention observed on N_out and E_in won first");
+            pass_count = pass_count + 1;
+        end
+
+        @(posedge clk);
+        #1;
+        if (dut.n_rr_ptr_vc0 !== 2'd2) begin
+            $display("[FAIL] Round 1 pointer did not rotate to W_in. Expected 2, observed %0d", dut.n_rr_ptr_vc0);
+            fail_count = fail_count + 1;
+        end else begin
+            $display("[PASS] Round 1 pointer rotated to W_in (n_rr_ptr_vc0 = %0d)", dut.n_rr_ptr_vc0);
+            pass_count = pass_count + 1;
+        end
+
+        // Round 2: keep the W_in loser from Round 1, clear N_out.vc0 so it can
+        // accept a new winner, and inject a fresh E_in contender. After
+        // rotation, W_in must win.
+        if (polarity !== 1'b0)
+            wait (polarity == 1'b0);
+        @(negedge clk);
+        dut.out_buf_valid[buf_idx(PORT_N, 1'b0)] = 1'b0;
+        dut.in_buf_valid[buf_idx(PORT_E, 1'b0)]  = 1'b1;
+        dut.in_buf_data [buf_idx(PORT_E, 1'b0)]  = make_packet(1'b0, DIRX_E, DIRY_N, 4'd0, 4'd1, 4'd6, 4'd2, 4'd6, 4'd1, 32'h88880003);
+        #1;
+
+        if (!(dut.req_n_from_e && dut.req_n_from_w && dut.n_grant_valid)) begin
+            $display("[FAIL] Round 2 contention was not created on N_out at time %0t", $time);
+            fail_count = fail_count + 1;
+        end else if (dut.n_grant_src !== PORT_W) begin
+            $display("[FAIL] Round 2 wrong winner on N_out. Expected W_in after rotation, observed src=%0d", dut.n_grant_src);
+            fail_count = fail_count + 1;
+        end else begin
+            $display("[PASS] Round 2 contention observed on N_out and W_in won after rotation");
+            pass_count = pass_count + 1;
+        end
+
+        @(posedge clk);
+        #1;
+        if (dut.n_rr_ptr_vc0 !== 2'd3) begin
+            $display("[FAIL] Round 2 pointer did not rotate after W_in grant. Expected 3, observed %0d", dut.n_rr_ptr_vc0);
+            fail_count = fail_count + 1;
+        end else begin
+            $display("[PASS] Round 2 pointer rotated after W_in grant (n_rr_ptr_vc0 = %0d)", dut.n_rr_ptr_vc0);
+            pass_count = pass_count + 1;
+        end
+        wait_cycles(4);
+
 
         $display("\n============================================================");
         $display("Testbench finished. PASS = %0d, FAIL = %0d", pass_count, fail_count);

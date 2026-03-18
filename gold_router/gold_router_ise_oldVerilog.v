@@ -315,6 +315,29 @@ module gold_router #(
     assign pe_buf_can_vc0 = ~out_buf_valid[buf_idx(PORT_PE, 0)] || ((external_vc == 1'b0) && pe_tx_fire);
     assign pe_buf_can_vc1 = ~out_buf_valid[buf_idx(PORT_PE, 1)] || ((external_vc == 1'b1) && pe_tx_fire);
 
+    wire                    cur_in_valid_n;
+    wire                    cur_in_valid_s;
+    wire                    cur_in_valid_e;
+    wire                    cur_in_valid_w;
+    wire                    cur_in_valid_pe;
+    wire [PACKET_WIDTH-1:0] cur_in_pkt_n;
+    wire [PACKET_WIDTH-1:0] cur_in_pkt_s;
+    wire [PACKET_WIDTH-1:0] cur_in_pkt_e;
+    wire [PACKET_WIDTH-1:0] cur_in_pkt_w;
+    wire [PACKET_WIDTH-1:0] cur_in_pkt_pe;
+
+    assign cur_in_valid_n  = in_buf_valid[buf_idx(PORT_N,  internal_vc)];
+    assign cur_in_valid_s  = in_buf_valid[buf_idx(PORT_S,  internal_vc)];
+    assign cur_in_valid_e  = in_buf_valid[buf_idx(PORT_E,  internal_vc)];
+    assign cur_in_valid_w  = in_buf_valid[buf_idx(PORT_W,  internal_vc)];
+    assign cur_in_valid_pe = in_buf_valid[buf_idx(PORT_PE, internal_vc)];
+
+    assign cur_in_pkt_n  = in_buf_data[buf_idx(PORT_N,  internal_vc)];
+    assign cur_in_pkt_s  = in_buf_data[buf_idx(PORT_S,  internal_vc)];
+    assign cur_in_pkt_e  = in_buf_data[buf_idx(PORT_E,  internal_vc)];
+    assign cur_in_pkt_w  = in_buf_data[buf_idx(PORT_W,  internal_vc)];
+    assign cur_in_pkt_pe = in_buf_data[buf_idx(PORT_PE, internal_vc)];
+
     reg                    req_valid_n;
     reg  [2:0]             req_out_n;
     reg                    req_out_vc_n;
@@ -409,7 +432,11 @@ module gold_router #(
     wire s_multi_req;
     wire pe_multi_req;
 
-    always @(*) begin
+    always @(internal_vc or e_rr_ptr_vc0 or e_rr_ptr_vc1 or
+             w_rr_ptr_vc0 or w_rr_ptr_vc1 or
+             n_rr_ptr_vc0 or n_rr_ptr_vc1 or
+             s_rr_ptr_vc0 or s_rr_ptr_vc1 or
+             pe_rr_ptr_vc0 or pe_rr_ptr_vc1) begin
         if (internal_vc == 1'b0) begin
             cur_vc_e_ptr  = e_rr_ptr_vc0;
             cur_vc_w_ptr  = w_rr_ptr_vc0;
@@ -425,7 +452,9 @@ module gold_router #(
         end
     end
 
-    always @(*) begin
+    always @(internal_vc or local_x or local_y or
+             cur_in_valid_n or cur_in_valid_s or cur_in_valid_e or cur_in_valid_w or cur_in_valid_pe or
+             cur_in_pkt_n or cur_in_pkt_s or cur_in_pkt_e or cur_in_pkt_w or cur_in_pkt_pe) begin
         req_valid_n  = 1'b0;
         req_out_n    = PORT_N;
         req_out_vc_n = 1'b0;
@@ -451,133 +480,127 @@ module gold_router #(
         req_out_vc_pe = 1'b0;
         req_pkt_pe    = {PACKET_WIDTH{1'b0}};
 
-        if (in_buf_valid[buf_idx(PORT_N, internal_vc)]) begin
-            if ((get_hops_x(in_buf_data[buf_idx(PORT_N, internal_vc)]) == 4'd0) &&
-                (get_hops_y(in_buf_data[buf_idx(PORT_N, internal_vc)]) != 4'd0) &&
-                (get_diry(in_buf_data[buf_idx(PORT_N, internal_vc)]) == DIRY_N)) begin
+        if (cur_in_valid_n) begin
+            if ((get_hops_x(cur_in_pkt_n) == 4'd0) &&
+                (get_hops_y(cur_in_pkt_n) != 4'd0) &&
+                (get_diry(cur_in_pkt_n) == DIRY_N)) begin
                 req_valid_n  = 1'b1;
                 req_out_n    = PORT_N;
-                req_out_vc_n = get_vc(in_buf_data[buf_idx(PORT_N, internal_vc)]) |
-                               is_cross_y(get_diry(in_buf_data[buf_idx(PORT_N, internal_vc)]), local_y);
-                req_pkt_n    = build_y_packet(in_buf_data[buf_idx(PORT_N, internal_vc)], req_out_vc_n);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_N, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_N, internal_vc)]) == 4'd0)) begin
+                req_out_vc_n = get_vc(cur_in_pkt_n) | is_cross_y(get_diry(cur_in_pkt_n), local_y);
+                req_pkt_n    = build_y_packet(cur_in_pkt_n, req_out_vc_n);
+            end else if ((get_hops_x(cur_in_pkt_n) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_n) == 4'd0)) begin
                 req_valid_n  = 1'b1;
                 req_out_n    = PORT_PE;
                 req_out_vc_n = internal_vc;
-                req_pkt_n    = in_buf_data[buf_idx(PORT_N, internal_vc)];
+                req_pkt_n    = cur_in_pkt_n;
             end
         end
 
-        if (in_buf_valid[buf_idx(PORT_S, internal_vc)]) begin
-            if ((get_hops_x(in_buf_data[buf_idx(PORT_S, internal_vc)]) == 4'd0) &&
-                (get_hops_y(in_buf_data[buf_idx(PORT_S, internal_vc)]) != 4'd0) &&
-                (get_diry(in_buf_data[buf_idx(PORT_S, internal_vc)]) == DIRY_S)) begin
+        if (cur_in_valid_s) begin
+            if ((get_hops_x(cur_in_pkt_s) == 4'd0) &&
+                (get_hops_y(cur_in_pkt_s) != 4'd0) &&
+                (get_diry(cur_in_pkt_s) == DIRY_S)) begin
                 req_valid_s  = 1'b1;
                 req_out_s    = PORT_S;
-                req_out_vc_s = get_vc(in_buf_data[buf_idx(PORT_S, internal_vc)]) |
-                               is_cross_y(get_diry(in_buf_data[buf_idx(PORT_S, internal_vc)]), local_y);
-                req_pkt_s    = build_y_packet(in_buf_data[buf_idx(PORT_S, internal_vc)], req_out_vc_s);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_S, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_S, internal_vc)]) == 4'd0)) begin
+                req_out_vc_s = get_vc(cur_in_pkt_s) | is_cross_y(get_diry(cur_in_pkt_s), local_y);
+                req_pkt_s    = build_y_packet(cur_in_pkt_s, req_out_vc_s);
+            end else if ((get_hops_x(cur_in_pkt_s) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_s) == 4'd0)) begin
                 req_valid_s  = 1'b1;
                 req_out_s    = PORT_PE;
                 req_out_vc_s = internal_vc;
-                req_pkt_s    = in_buf_data[buf_idx(PORT_S, internal_vc)];
+                req_pkt_s    = cur_in_pkt_s;
             end
         end
 
-        if (in_buf_valid[buf_idx(PORT_E, internal_vc)]) begin
-            if ((get_hops_x(in_buf_data[buf_idx(PORT_E, internal_vc)]) != 4'd0) &&
-                (get_dirx(in_buf_data[buf_idx(PORT_E, internal_vc)]) == DIRX_E)) begin
+        if (cur_in_valid_e) begin
+            if ((get_hops_x(cur_in_pkt_e) != 4'd0) &&
+                (get_dirx(cur_in_pkt_e) == DIRX_E)) begin
                 req_valid_e  = 1'b1;
                 req_out_e    = PORT_E;
-                req_out_vc_e = get_vc(in_buf_data[buf_idx(PORT_E, internal_vc)]) |
-                               is_cross_x(get_dirx(in_buf_data[buf_idx(PORT_E, internal_vc)]), local_x);
-                req_pkt_e    = build_x_packet(in_buf_data[buf_idx(PORT_E, internal_vc)], req_out_vc_e);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_E, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_E, internal_vc)]) != 4'd0) &&
-                         (get_diry(in_buf_data[buf_idx(PORT_E, internal_vc)]) == DIRY_N)) begin
+                req_out_vc_e = get_vc(cur_in_pkt_e) | is_cross_x(get_dirx(cur_in_pkt_e), local_x);
+                req_pkt_e    = build_x_packet(cur_in_pkt_e, req_out_vc_e);
+            end else if ((get_hops_x(cur_in_pkt_e) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_e) != 4'd0) &&
+                         (get_diry(cur_in_pkt_e) == DIRY_N)) begin
                 req_valid_e  = 1'b1;
                 req_out_e    = PORT_N;
-                req_out_vc_e = is_cross_y(get_diry(in_buf_data[buf_idx(PORT_E, internal_vc)]), local_y);
-                req_pkt_e    = build_y_packet(in_buf_data[buf_idx(PORT_E, internal_vc)], req_out_vc_e);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_E, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_E, internal_vc)]) != 4'd0) &&
-                         (get_diry(in_buf_data[buf_idx(PORT_E, internal_vc)]) == DIRY_S)) begin
+                req_out_vc_e = is_cross_y(get_diry(cur_in_pkt_e), local_y);
+                req_pkt_e    = build_y_packet(cur_in_pkt_e, req_out_vc_e);
+            end else if ((get_hops_x(cur_in_pkt_e) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_e) != 4'd0) &&
+                         (get_diry(cur_in_pkt_e) == DIRY_S)) begin
                 req_valid_e  = 1'b1;
                 req_out_e    = PORT_S;
-                req_out_vc_e = is_cross_y(get_diry(in_buf_data[buf_idx(PORT_E, internal_vc)]), local_y);
-                req_pkt_e    = build_y_packet(in_buf_data[buf_idx(PORT_E, internal_vc)], req_out_vc_e);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_E, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_E, internal_vc)]) == 4'd0)) begin
+                req_out_vc_e = is_cross_y(get_diry(cur_in_pkt_e), local_y);
+                req_pkt_e    = build_y_packet(cur_in_pkt_e, req_out_vc_e);
+            end else if ((get_hops_x(cur_in_pkt_e) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_e) == 4'd0)) begin
                 req_valid_e  = 1'b1;
                 req_out_e    = PORT_PE;
                 req_out_vc_e = internal_vc;
-                req_pkt_e    = in_buf_data[buf_idx(PORT_E, internal_vc)];
+                req_pkt_e    = cur_in_pkt_e;
             end
         end
 
-        if (in_buf_valid[buf_idx(PORT_W, internal_vc)]) begin
-            if ((get_hops_x(in_buf_data[buf_idx(PORT_W, internal_vc)]) != 4'd0) &&
-                (get_dirx(in_buf_data[buf_idx(PORT_W, internal_vc)]) == DIRX_W)) begin
+        if (cur_in_valid_w) begin
+            if ((get_hops_x(cur_in_pkt_w) != 4'd0) &&
+                (get_dirx(cur_in_pkt_w) == DIRX_W)) begin
                 req_valid_w  = 1'b1;
                 req_out_w    = PORT_W;
-                req_out_vc_w = get_vc(in_buf_data[buf_idx(PORT_W, internal_vc)]) |
-                               is_cross_x(get_dirx(in_buf_data[buf_idx(PORT_W, internal_vc)]), local_x);
-                req_pkt_w    = build_x_packet(in_buf_data[buf_idx(PORT_W, internal_vc)], req_out_vc_w);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_W, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_W, internal_vc)]) != 4'd0) &&
-                         (get_diry(in_buf_data[buf_idx(PORT_W, internal_vc)]) == DIRY_N)) begin
+                req_out_vc_w = get_vc(cur_in_pkt_w) | is_cross_x(get_dirx(cur_in_pkt_w), local_x);
+                req_pkt_w    = build_x_packet(cur_in_pkt_w, req_out_vc_w);
+            end else if ((get_hops_x(cur_in_pkt_w) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_w) != 4'd0) &&
+                         (get_diry(cur_in_pkt_w) == DIRY_N)) begin
                 req_valid_w  = 1'b1;
                 req_out_w    = PORT_N;
-                req_out_vc_w = is_cross_y(get_diry(in_buf_data[buf_idx(PORT_W, internal_vc)]), local_y);
-                req_pkt_w    = build_y_packet(in_buf_data[buf_idx(PORT_W, internal_vc)], req_out_vc_w);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_W, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_W, internal_vc)]) != 4'd0) &&
-                         (get_diry(in_buf_data[buf_idx(PORT_W, internal_vc)]) == DIRY_S)) begin
+                req_out_vc_w = is_cross_y(get_diry(cur_in_pkt_w), local_y);
+                req_pkt_w    = build_y_packet(cur_in_pkt_w, req_out_vc_w);
+            end else if ((get_hops_x(cur_in_pkt_w) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_w) != 4'd0) &&
+                         (get_diry(cur_in_pkt_w) == DIRY_S)) begin
                 req_valid_w  = 1'b1;
                 req_out_w    = PORT_S;
-                req_out_vc_w = is_cross_y(get_diry(in_buf_data[buf_idx(PORT_W, internal_vc)]), local_y);
-                req_pkt_w    = build_y_packet(in_buf_data[buf_idx(PORT_W, internal_vc)], req_out_vc_w);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_W, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_W, internal_vc)]) == 4'd0)) begin
+                req_out_vc_w = is_cross_y(get_diry(cur_in_pkt_w), local_y);
+                req_pkt_w    = build_y_packet(cur_in_pkt_w, req_out_vc_w);
+            end else if ((get_hops_x(cur_in_pkt_w) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_w) == 4'd0)) begin
                 req_valid_w  = 1'b1;
                 req_out_w    = PORT_PE;
                 req_out_vc_w = internal_vc;
-                req_pkt_w    = in_buf_data[buf_idx(PORT_W, internal_vc)];
+                req_pkt_w    = cur_in_pkt_w;
             end
         end
 
-        if (in_buf_valid[buf_idx(PORT_PE, internal_vc)]) begin
-            if ((get_hops_x(in_buf_data[buf_idx(PORT_PE, internal_vc)]) != 4'd0) &&
-                (get_dirx(in_buf_data[buf_idx(PORT_PE, internal_vc)]) == DIRX_E)) begin
+        if (cur_in_valid_pe) begin
+            if ((get_hops_x(cur_in_pkt_pe) != 4'd0) &&
+                (get_dirx(cur_in_pkt_pe) == DIRX_E)) begin
                 req_valid_pe  = 1'b1;
                 req_out_pe    = PORT_E;
-                req_out_vc_pe = get_vc(in_buf_data[buf_idx(PORT_PE, internal_vc)]) |
-                                is_cross_x(get_dirx(in_buf_data[buf_idx(PORT_PE, internal_vc)]), local_x);
-                req_pkt_pe    = build_x_packet(in_buf_data[buf_idx(PORT_PE, internal_vc)], req_out_vc_pe);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_PE, internal_vc)]) != 4'd0) &&
-                         (get_dirx(in_buf_data[buf_idx(PORT_PE, internal_vc)]) == DIRX_W)) begin
+                req_out_vc_pe = get_vc(cur_in_pkt_pe) | is_cross_x(get_dirx(cur_in_pkt_pe), local_x);
+                req_pkt_pe    = build_x_packet(cur_in_pkt_pe, req_out_vc_pe);
+            end else if ((get_hops_x(cur_in_pkt_pe) != 4'd0) &&
+                         (get_dirx(cur_in_pkt_pe) == DIRX_W)) begin
                 req_valid_pe  = 1'b1;
                 req_out_pe    = PORT_W;
-                req_out_vc_pe = get_vc(in_buf_data[buf_idx(PORT_PE, internal_vc)]) |
-                                is_cross_x(get_dirx(in_buf_data[buf_idx(PORT_PE, internal_vc)]), local_x);
-                req_pkt_pe    = build_x_packet(in_buf_data[buf_idx(PORT_PE, internal_vc)], req_out_vc_pe);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_PE, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_PE, internal_vc)]) != 4'd0) &&
-                         (get_diry(in_buf_data[buf_idx(PORT_PE, internal_vc)]) == DIRY_N)) begin
+                req_out_vc_pe = get_vc(cur_in_pkt_pe) | is_cross_x(get_dirx(cur_in_pkt_pe), local_x);
+                req_pkt_pe    = build_x_packet(cur_in_pkt_pe, req_out_vc_pe);
+            end else if ((get_hops_x(cur_in_pkt_pe) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_pe) != 4'd0) &&
+                         (get_diry(cur_in_pkt_pe) == DIRY_N)) begin
                 req_valid_pe  = 1'b1;
                 req_out_pe    = PORT_N;
-                req_out_vc_pe = is_cross_y(get_diry(in_buf_data[buf_idx(PORT_PE, internal_vc)]), local_y);
-                req_pkt_pe    = build_y_packet(in_buf_data[buf_idx(PORT_PE, internal_vc)], req_out_vc_pe);
-            end else if ((get_hops_x(in_buf_data[buf_idx(PORT_PE, internal_vc)]) == 4'd0) &&
-                         (get_hops_y(in_buf_data[buf_idx(PORT_PE, internal_vc)]) != 4'd0) &&
-                         (get_diry(in_buf_data[buf_idx(PORT_PE, internal_vc)]) == DIRY_S)) begin
+                req_out_vc_pe = is_cross_y(get_diry(cur_in_pkt_pe), local_y);
+                req_pkt_pe    = build_y_packet(cur_in_pkt_pe, req_out_vc_pe);
+            end else if ((get_hops_x(cur_in_pkt_pe) == 4'd0) &&
+                         (get_hops_y(cur_in_pkt_pe) != 4'd0) &&
+                         (get_diry(cur_in_pkt_pe) == DIRY_S)) begin
                 req_valid_pe  = 1'b1;
                 req_out_pe    = PORT_S;
-                req_out_vc_pe = is_cross_y(get_diry(in_buf_data[buf_idx(PORT_PE, internal_vc)]), local_y);
-                req_pkt_pe    = build_y_packet(in_buf_data[buf_idx(PORT_PE, internal_vc)], req_out_vc_pe);
+                req_out_vc_pe = is_cross_y(get_diry(cur_in_pkt_pe), local_y);
+                req_pkt_pe    = build_y_packet(cur_in_pkt_pe, req_out_vc_pe);
             end
         end
     end
@@ -615,7 +638,7 @@ module gold_router #(
                           (req_pe_from_n & req_pe_from_w) | (req_pe_from_e & req_pe_from_s) |
                           (req_pe_from_e & req_pe_from_w) | (req_pe_from_s & req_pe_from_w);
 
-    always @(*) begin
+    always @(cur_vc_e_ptr or req_e_from_e or req_e_from_pe or req_out_vc_e or req_pkt_e or req_out_vc_pe or req_pkt_pe or e_multi_req) begin
         e_grant_valid  = 1'b0;
         e_grant_src    = PORT_E;
         e_grant_out_vc = 1'b0;
@@ -648,7 +671,7 @@ module gold_router #(
         e_advance_ptr = e_grant_valid && e_multi_req;
     end
 
-    always @(*) begin
+    always @(cur_vc_w_ptr or req_w_from_w or req_w_from_pe or req_out_vc_w or req_pkt_w or req_out_vc_pe or req_pkt_pe or w_multi_req) begin
         w_grant_valid  = 1'b0;
         w_grant_src    = PORT_W;
         w_grant_out_vc = 1'b0;
@@ -680,7 +703,9 @@ module gold_router #(
         w_advance_ptr = w_grant_valid && w_multi_req;
     end
 
-    always @(*) begin
+    always @(cur_vc_n_ptr or req_n_from_n or req_n_from_e or req_n_from_w or req_n_from_pe or
+             req_out_vc_n or req_pkt_n or req_out_vc_e or req_pkt_e or req_out_vc_w or req_pkt_w or req_out_vc_pe or req_pkt_pe or
+             n_multi_req) begin
         n_grant_valid  = 1'b0;
         n_grant_src    = PORT_N;
         n_grant_out_vc = 1'b0;
@@ -727,7 +752,9 @@ module gold_router #(
         n_advance_ptr = n_grant_valid && n_multi_req;
     end
 
-    always @(*) begin
+    always @(cur_vc_s_ptr or req_s_from_s or req_s_from_e or req_s_from_w or req_s_from_pe or
+             req_out_vc_s or req_pkt_s or req_out_vc_e or req_pkt_e or req_out_vc_w or req_pkt_w or req_out_vc_pe or req_pkt_pe or
+             s_multi_req) begin
         s_grant_valid  = 1'b0;
         s_grant_src    = PORT_S;
         s_grant_out_vc = 1'b0;
@@ -774,7 +801,8 @@ module gold_router #(
         s_advance_ptr = s_grant_valid && s_multi_req;
     end
 
-    always @(*) begin
+    always @(internal_vc or cur_vc_pe_ptr or req_pe_from_n or req_pe_from_e or req_pe_from_s or req_pe_from_w or
+             req_pkt_n or req_pkt_e or req_pkt_s or req_pkt_w or pe_multi_req) begin
         pe_grant_valid  = 1'b0;
         pe_grant_src    = PORT_N;
         pe_grant_out_vc = internal_vc;
